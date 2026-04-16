@@ -261,7 +261,7 @@ function App({ user }) {
                   onClick={exportToExcel}
                   className="w-full md:w-auto px-5 py-2 bg-emerald-500/10 border border-emerald-500/50 text-emerald-400 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-emerald-500/20 transition-all active:scale-95"
                 >
-                  Export Data (xlsx)
+                  Export Data (.xlsx)
                 </button>
               </div>
 
