@@ -186,6 +186,17 @@ function App() {
           <button className="w-full md:w-auto px-6 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium py-2 rounded-lg transition-colors border border-slate-700">
             Simulate Reboot
           </button>
+          <div className="mt-4 text-center border-t border-slate-800 pt-4">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
+              Developer Presence
+            </p>
+            <p className="text-xs text-emerald-500/60 font-medium">
+              Rizky Januar Hardi | 1103220166
+            </p>
+            <p className="text-[9px] text-slate-600 italic">
+              Telkom University Bandung
+            </p>
+          </div>
         </div>
 
       </div>
