@@ -1,6 +1,9 @@
 # Firebase Secret Key (RAHASIA!)
 serviceAccountKey.json
 
+# py
+.py
+
 # Dependencies (Biarkan Vercel yang install sendiri)
 node_modules/
 
