@@ -1,13 +1,16 @@
 import ExcelJS from 'exceljs';
 import Chart from 'react-apexcharts';
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore"; // Ditambah updateDoc
 import { signOut } from "firebase/auth";
 import { db, auth } from "./firebase";
+
 function App({ user }) {
   const [logs, setLogs] = useState([]);
   const [history, setHistory] = useState({ voltage: [], current: [], battery: [], timestamps: [] });
   const [activeTab, setActiveTab] = useState('Overview');
+  const [relayState, setRelayState] = useState("ON"); // State baru untuk Toggle
+  const [fanState, setFanState] = useState("OFF");   // TAMBAHKAN INI: State baru untuk Fan
   const [data, setData] = useState({
     batteryLevel: 0,
     pvVoltage: 0,
@@ -25,26 +28,32 @@ function App({ user }) {
         if (docSnap.exists()) {
           const newData = docSnap.data();
 
-          // LOGIKA UPDATE DATA & LOGS
           setData((prev) => {
-            // Hanya tambah log kalau statusnya BENAR-BENAR berubah
             if (newData.status && prev.status !== newData.status) {
               const timestamp = new Date().toLocaleTimeString();
               setLogs(prevLogs => [
                 `[${timestamp}] Status: ${newData.status}`,
                 ...prevLogs
               ].slice(0, 50));
+            }            
+            // Sinkronisasi status relay dengan database
+            if (newData.relayState !== undefined) {
+              setRelayState(newData.relayState);
             }
-            // WAJIB ADA RETURN INI! Kalau hilang, web jadi putih.
+
+            // TAMBAHKAN INI: Sinkronisasi status fan dengan database
+            if (newData.fanState !== undefined) {
+              setFanState(newData.fanState);
+            }
+
             return { ...prev, ...newData };
           });
 
-          // UPDATE HISTORY CHART
           if (newData.pvVoltage !== undefined) {
             setHistory(prev => ({
               voltage: [...prev.voltage, newData.pvVoltage].slice(-24),
-              current: [...prev.current, newData.pvCurrent].slice(-24),     // REKAM ARUS
-              battery: [...prev.battery, newData.batteryLevel].slice(-24), // REKAM BATERAI
+              current: [...prev.current, newData.pvCurrent].slice(-24),
+              battery: [...prev.battery, newData.batteryLevel].slice(-24),
               timestamps: [...prev.timestamps, newData.timestamp || new Date().toLocaleTimeString()].slice(-24)
             }));
           }
@@ -57,23 +66,21 @@ function App({ user }) {
   const solarPower = (data.pvVoltage * data.pvCurrent).toFixed(0);
 
   const chartOptions = {
-  chart: { id: 'voltage-chart', toolbar: { show: false }, animations: { enabled: true, easing: 'linear', dynamicAnimation: { speed: 1000 } } },
-  xaxis: { categories: history.timestamps, labels: { style: { colors: '#64748b', fontSize: '10px' } } },
-  stroke: { curve: 'smooth', colors: ['#10b981'] },
-  fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.1 } },
-  grid: { borderColor: '#334155', strokeDashArray: 4 },
-  dataLabels: { enabled: false },
-  theme: { mode: 'dark' }
+    chart: { id: 'voltage-chart', toolbar: { show: false }, animations: { enabled: true, easing: 'linear', dynamicAnimation: { speed: 1000 } } },
+    xaxis: { categories: history.timestamps, labels: { style: { colors: '#64748b', fontSize: '10px' } } },
+    stroke: { curve: 'smooth', colors: ['#10b981'] },
+    fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.1 } },
+    grid: { borderColor: '#334155', strokeDashArray: 4 },
+    dataLabels: { enabled: false },
+    theme: { mode: 'dark' }
   };
 
   const chartSeries = [{ name: 'Voltage', data: history.voltage }];
- 
+
   const exportToExcel = async () => {
-      // 1. Buat File Excel Baru
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('SunVolt Data');
 
-      // 2. Atur Kolom dan Lebarnya (Auto-Width)
       sheet.columns = [
         { header: 'Timestamp', key: 'time', width: 15 },
         { header: 'Voltage (V)', key: 'voltage', width: 15 },
@@ -81,10 +88,8 @@ function App({ user }) {
         { header: 'Battery (%)', key: 'battery', width: 15 }
       ];
 
-      // Bikin Header baris pertama jadi Cetak Tebal (Bold)
       sheet.getRow(1).font = { bold: true };
 
-      // 3. Masukkan Data dari History
       history.timestamps.forEach((time, index) => {
         sheet.addRow({
           time: time,
@@ -94,7 +99,6 @@ function App({ user }) {
         });
       });
 
-      // 4. Generate dan Download File
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -107,9 +111,41 @@ function App({ user }) {
       document.body.removeChild(link);
     };
 
+  // --- FUNGSI TOGGLE BARU ---
+  const handleToggleRelay = async () => {
+    const newState = relayState === "ON" ? "OFF" : "ON";
+    const stationRef = doc(db, "stations", "station_01");
+
+    try {
+      await updateDoc(stationRef, {
+        relayState: newState
+      });
+      // Catat ke Log lokal web (opsional, tapi bagus untuk UX)
+      const timestamp = new Date().toLocaleTimeString();
+      setLogs(prevLogs => [`[${timestamp}] Command: Turned Relay ${newState}`, ...prevLogs].slice(0, 50));
+    } catch (error) {
+      console.error("Gagal mengubah status relay:", error);
+    }
+  };
+  // --- FUNGSI TOGGLE FAN BARU ---
+  const handleToggleFan = async () => {
+    const newState = fanState === "ON" ? "OFF" : "ON";
+    const stationRef = doc(db, "stations", "station_01");
+
+    try {
+      await updateDoc(stationRef, {
+        fanState: newState
+      });
+      // Catat ke Log lokal web
+      const timestamp = new Date().toLocaleTimeString();
+      setLogs(prevLogs => [`[${timestamp}] Command: Turned Cooling Fan ${newState}`, ...prevLogs].slice(0, 50));
+    } catch (error) {
+      console.error("Gagal mengubah status fan:", error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-4 font-sans text-slate-200">
-      
       <div className="w-full max-w-md md:max-w-4xl bg-[#1a1d24] rounded-3xl overflow-hidden shadow-2xl border border-slate-800/50 flex flex-col h-[750px] md:h-[600px]">
         
         {/* HEADER */}
@@ -118,7 +154,6 @@ function App({ user }) {
             <h1 className="text-xl font-semibold text-white tracking-wide">SunVolt Hub</h1>
             <div className="flex items-center gap-3">
               <p className="text-xs text-emerald-500">{user?.email}</p>
-              {/* Tombol Logout Kecil & Clean */}
               <button 
                 onClick={() => signOut(auth)}
                 className="text-[10px] text-slate-500 hover:text-red-400 transition-colors uppercase font-bold tracking-tighter"
@@ -145,10 +180,8 @@ function App({ user }) {
 
         {/* CONTENT */}
         <div className="flex-1 p-5 overflow-y-auto bg-[#14161a]">
-          
           {activeTab === 'Overview' && (
             <div className="h-full flex flex-col md:flex-row items-center justify-center gap-8 md:gap-16">
-              
               <div className="w-48 h-56 rounded-2xl border-4 border-slate-700 relative overflow-hidden bg-slate-800/50 flex items-end shrink-0">
                 <div 
                   className="w-full bg-emerald-400 transition-all duration-1000 ease-out absolute bottom-0"
@@ -166,7 +199,10 @@ function App({ user }) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
                     <div className="text-[10px] text-slate-500 uppercase">Port Status</div>
-                    <div className="text-emerald-400 font-bold text-lg">OPEN</div>
+                    {/* Status port mengikuti state relayState */}
+                    <div className={`font-bold text-lg ${relayState === 'ON' ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {relayState === 'ON' ? 'ON' : 'OFF'}
+                    </div>
                   </div>
                   <div>
                     <div className="text-[10px] text-slate-500 uppercase">Current Flow</div>
@@ -216,15 +252,12 @@ function App({ user }) {
                 <div><div className="text-[10px] text-slate-500">RSSI</div><div className="font-bold">-65 dBm</div></div>
               </div>
 
-              {/* CHART AREA - Dengan Fitur Horizontal Scroll */}
+              {/* CHART AREA */}
               <div className="col-span-full bg-[#1a1d24] p-4 rounded-xl border border-slate-700/50 mt-2">
                 <div className="text-xs text-slate-400 mb-4 uppercase tracking-wider font-semibold">
                   Voltage Trend (Live)
                 </div>
-                
-                {/* Scroll Wrapper */}
                 <div className="overflow-x-auto pb-2 scrollbar-hide">
-                  {/* min-w ini yang memaksa grafik tetap lebar agar bisa di-scroll */}
                   <div className="min-w-[800px]">
                     <Chart 
                       options={chartOptions} 
@@ -240,11 +273,7 @@ function App({ user }) {
 
           {activeTab === 'Logs' && (
             <div className="h-full flex flex-col gap-4">
-              
-              {/* Header Stats & Actions */}
               <div className="bg-[#1a1d24] p-4 rounded-xl border border-slate-700/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0">
-                
-                {/* Container Stats (Kiri) */}
                 <div className="flex gap-8 w-full md:w-auto justify-between md:justify-start">
                   <div>
                     <div className="text-[10px] text-slate-500 uppercase font-bold">Generated</div>
@@ -256,7 +285,6 @@ function App({ user }) {
                   </div>
                 </div>
 
-                {/* Tombol Export (Kanan) */}
                 <button 
                   onClick={exportToExcel}
                   className="w-full md:w-auto px-5 py-2 bg-emerald-500/10 border border-emerald-500/50 text-emerald-400 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-emerald-500/20 transition-all active:scale-95"
@@ -265,7 +293,6 @@ function App({ user }) {
                 </button>
               </div>
 
-              {/* Dynamic Terminal Logs */}
               <div className="flex-1 bg-[#0b0c0f] rounded-xl border border-slate-800 p-3 font-mono text-[11px] overflow-y-auto space-y-1 shadow-inner">
                 {logs.map((log, index) => (
                   <p 
@@ -275,8 +302,6 @@ function App({ user }) {
                     {log}
                   </p>
                 ))}
-
-                {/* Tampilkan pesan jika log masih kosong */}
                 {logs.length === 0 && (
                   <p className="text-slate-700 italic text-center mt-4">No system events recorded.</p>
                 )}
@@ -287,7 +312,6 @@ function App({ user }) {
 
         {/* FOOTER */}
         <div className="bg-[#1a1d24] p-4 border-t border-slate-800 flex flex-col md:flex-row gap-4 items-center justify-between">
-          
           <div className="w-full md:w-auto">
             <select 
               value={activeTab}
@@ -312,11 +336,33 @@ function App({ user }) {
             </div>
           </div>
 
-          <button className="px-6 bg-slate-800 text-slate-300 text-sm py-2 rounded-lg border border-slate-700">
-            Simulate Reboot
-          </button>
-        </div>
 
+            <div className="flex gap-3 w-full md:w-auto justify-end">
+            {/* TAMBAHKAN INI: TOMBOL TOGGLE FAN */}
+            <button 
+              onClick={handleToggleFan}
+              className={`px-6 text-sm py-2 rounded-lg border font-bold transition-all active:scale-95 ${
+                fanState === "ON" 
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20" 
+                  : "bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700"
+              }`}
+            >
+              {fanState === "ON" ? " Fan: ON" : " Fan: OFF"}
+            </button>
+
+            {/* TOMBOL TOGGLE RELAY */}
+            <button 
+              onClick={handleToggleRelay}
+              className={`px-6 text-sm py-2 rounded-lg border font-bold transition-colors ${
+                relayState === "ON" 
+                  ? "bg-red-500/20 text-red-400 border-red-500/50 hover:bg-red-500/30" 
+                  : "bg-emerald-500/20 text-emerald-400 border-emerald-500/50 hover:bg-emerald-500/30"
+              }`}
+            >
+              {relayState === "ON" ? "Turn Relay OFF" : "Turn Relay ON"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
