@@ -1,31 +1,51 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { signInWithPopup, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 
 const ALLOWED_EMAILS = [
   "firecalm2@gmail.com",
   "syauqiakmal137@gmail.com",
-  "fattaha.rasyad@gmail.com"
+  "fattaha.rasyad@gmail.com",
 ];
 
 function Login({ setUser }) {
   const [loginError, setLoginError] = useState("");
 
+  // Check browser memory for an error surviving a component reload
+  useEffect(() => {
+    const savedError = sessionStorage.getItem("authError");
+    if (savedError) {
+      setLoginError(savedError);
+      sessionStorage.removeItem("authError"); // Clear it so it doesn't show forever
+    }
+  }, []);
+
   const handleLogin = async () => {
     try {
-      setLoginError(""); // Reset error setiap kali mencoba login
+      setLoginError(""); 
       const result = await signInWithPopup(auth, googleProvider);
-      const email = result.user.email;
+      
+      // Convert to lowercase to prevent accidental capitalization lockouts
+      const email = result.user.email.toLowerCase(); 
 
       if (ALLOWED_EMAILS.includes(email)) {
         setUser(result.user);
       } else {
+        // Save the error to browser memory before kicking them out
+        sessionStorage.setItem("authError", `Akses Ditolak: ${email} tidak terdaftar di sistem.`);
         await signOut(auth);
-        // Mengganti alert() dengan state agar muncul di UI
+        
+        // Fallback state update just in case the parent doesn't unmount it
         setLoginError(`Akses Ditolak: ${email} tidak terdaftar di sistem.`);
       }
     } catch (error) {
       console.error("Login error:", error);
+      // Cleanly handle the error if a user closes the Google popup window manually
+      if (error.code === 'auth/popup-closed-by-user') {
+        setLoginError("Login dibatalkan oleh pengguna.");
+      } else {
+        setLoginError("Terjadi kesalahan jaringan atau autentikasi.");
+      }
     }
   };
 
