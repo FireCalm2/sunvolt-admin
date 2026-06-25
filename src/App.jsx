@@ -15,10 +15,13 @@ function App({ user }) {
   const [relayDCState, setRelayDCState] = useState("OFF"); 
   const [fanState, setFanState] = useState(0); 
 
+  // --- 1. ADDED NEW FIREBASE VARIABLES HERE ---
   const [data, setData] = useState({
     batteryLevel: 0,
     batteryVoltage: 0.0,
     batteryCurrent: 0.0,
+    pvVoltage: 0.0,
+    systemState: "Resting",
     acVoltage: 0.0,
     acCurrent: 0.0,
     dcCurrent: 0.0,
@@ -184,6 +187,9 @@ function App({ user }) {
     return `${visiblePart}${hiddenPart}@${domain}`;
   };
 
+  // 2. HELPER VARIABLE FOR UI STATE
+  const isCharging = data.systemState === "Charging";
+
   return (
     <div className="min-h-screen bg-[#0f1115] flex items-center justify-center p-4 font-sans text-slate-200">
       <div className="w-full max-w-md md:max-w-4xl bg-[#1a1d24] rounded-3xl overflow-hidden shadow-2xl border border-slate-800/50 flex flex-col h-[750px] md:h-[600px]">
@@ -203,9 +209,16 @@ function App({ user }) {
             </div>
           </div>
           <div className="flex gap-6 text-xs font-medium tracking-wider text-slate-400">
+            {/* 3. ADDED SOLAR PANEL VOLTAGE TO HEADER */}
+            <div className="flex flex-col items-end hidden md:flex">
+              <span>SOLAR</span>
+              <span className="text-amber-400 text-sm font-bold">{data.pvVoltage || "0.0"}V</span>
+            </div>
             <div className="flex flex-col items-end">
               <span>BATTERY</span>
-              <span className="text-white text-sm">{data.batteryLevel || "0"}%</span>
+              <span className={isCharging ? "text-emerald-400 text-sm font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" : "text-white text-sm"}>
+                {data.batteryLevel || "0"}%
+              </span>
             </div>
             <div className="flex flex-col items-end hidden md:flex">
               <span>AC CHARGER</span>
@@ -223,18 +236,18 @@ function App({ user }) {
           {activeTab === 'Overview' && (
             <div className="h-full flex flex-col md:flex-row items-center justify-center gap-8 md:gap-12">
               
-              {/* Battery Capacity Fluid Meter Box */}
-              <div className="w-44 h-52 rounded-2xl border-4 border-slate-700 relative overflow-hidden bg-slate-800/50 flex items-end shrink-0 shadow-lg">
+              {/* 4. DYNAMIC FLUID METER BOX */}
+              <div className={`w-44 h-52 rounded-2xl border-4 ${isCharging ? 'border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.2)]' : 'border-slate-700'} relative overflow-hidden bg-slate-800/50 flex items-end shrink-0 transition-all duration-500`}>
                 <div 
-                  className="w-full bg-emerald-400 transition-all duration-1000 ease-out absolute bottom-0"
+                  className={`w-full transition-all duration-1000 ease-out absolute bottom-0 ${isCharging ? 'bg-emerald-400 animate-pulse' : 'bg-emerald-500'}`}
                   style={{ height: `${data.batteryLevel || 0}%` }}
                 />
                 <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-slate-950/20">
                   <span className="text-4xl font-black text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.7)]">
-                    {data.batteryLevel || "0"}%
+                    {isCharging ? '⚡' : ''}{data.batteryLevel || "0"}%
                   </span>
-                  <span className="text-[10px] text-slate-200 font-bold tracking-widest uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] mt-1">
-                    Capacity
+                  <span className={`text-[10px] font-bold tracking-widest uppercase drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] mt-1 ${isCharging ? 'text-emerald-300' : 'text-slate-200'}`}>
+                    {isCharging ? 'Charging' : 'Capacity'}
                   </span>
                 </div>
               </div>
@@ -281,12 +294,13 @@ function App({ user }) {
           {activeTab === 'Diagnostics' && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 h-full content-start text-left">
               
-              {/* Card 1: Main Battery Bank */}
+              {/* 5. ADDED SOLAR DATA TO DIAGNOSTICS CARD */}
               <div className="bg-[#1a1d24] p-4 rounded-xl border border-slate-700/50">
-                <div className="text-xs text-slate-400 mb-3 uppercase tracking-wider font-semibold text-emerald-400">Battery Bank</div>
-                <div className="space-y-2">
-                  <div><div className="text-[10px] text-slate-500">Bank Voltage</div><div className="font-bold text-white">{data.batteryVoltage || "48.6"} V</div></div>
+                <div className="text-xs text-slate-400 mb-3 uppercase tracking-wider font-semibold text-emerald-400">Battery & Solar</div>
+                <div className="space-y-1.5">
+                  <div><div className="text-[10px] text-slate-500">Bank Voltage</div><div className="font-bold text-white">{data.batteryVoltage || "0.0"} V</div></div>
                   <div><div className="text-[10px] text-slate-500">Charging Current</div><div className="font-bold text-white">{data.batteryCurrent || "0.0"} A</div></div>
+                  <div><div className="text-[10px] text-slate-500">Panel Voltage</div><div className="font-bold text-amber-400">{data.pvVoltage || "0.0"} V</div></div>
                 </div>
               </div>
 
